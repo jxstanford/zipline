@@ -16,6 +16,13 @@ OHLC = ["open", "high", "low", "close"]
 OHLCP = OHLC + ["price"]
 ALL_FIELDS = OHLCP + ["volume", "last_traded"]
 
+field_info = {
+    "open": 1,
+    "high": 2,
+    "low": -1,
+    "close": 0
+}
+
 
 class TestBarData(TestCase):
     @classmethod
@@ -84,74 +91,67 @@ class TestBarData(TestCase):
 
         return BcolzMinuteBarReader(cls.tempdir.path)
 
+    def check_internal_consistency(self, bar_data):
+        df = bar_data.spot_value([self.ASSET1, self.ASSET2], ALL_FIELDS)
+
+        asset1_multi_field = bar_data.spot_value(self.ASSET1, ALL_FIELDS)
+        asset2_multi_field = bar_data.spot_value(self.ASSET2, ALL_FIELDS)
+
+        for field in ALL_FIELDS:
+            asset1_value = bar_data.spot_value(self.ASSET1, field)
+            asset2_value = bar_data.spot_value(self.ASSET2, field)
+
+            multi_asset_series = bar_data.spot_value(
+                [self.ASSET1, self.ASSET2], field
+            )
+
+            # make sure all the different query forms are internally
+            # consistent
+            self.assert_equal_or_both_nan(multi_asset_series[self.ASSET1],
+                                          asset1_value)
+            self.assert_equal_or_both_nan(multi_asset_series[self.ASSET2],
+                                          asset2_value)
+
+            self.assert_equal_or_both_nan(df.loc[self.ASSET1][field],
+                                          asset1_value)
+            self.assert_equal_or_both_nan(df.loc[self.ASSET2][field],
+                                          asset2_value)
+
+            self.assert_equal_or_both_nan(asset1_multi_field[field],
+                                          asset1_value)
+            self.assert_equal_or_both_nan(asset2_multi_field[field],
+                                          asset2_value)
+
     def test_minute_value_before_assets_trading(self):
         # grab minutes that include the day before the asset start
         minutes = self.env.market_minutes_for_day(
             self.env.previous_trading_day(self.days[0])
         )
 
+        # this entire day is before either asset has started trading
         for idx, minute in enumerate(minutes):
-            bar_data = BarData(
-                self.data_portal,
-                lambda: minute,
-                "minute"
-            )
+            bar_data = BarData(self.data_portal, lambda: minute, "minute")
+            self.check_internal_consistency(bar_data)
 
-            # no prices for the first day
+            self.assertFalse(bar_data.can_trade(self.ASSET1))
+            self.assertFalse(bar_data.can_trade(self.ASSET2))
 
-            # single asset, single field
-            for field in OHLCP:
+            self.assertFalse(bar_data.is_stale(self.ASSET1))
+            self.assertFalse(bar_data.is_stale(self.ASSET2))
+
+            for field in ALL_FIELDS:
                 for asset in self.ASSETS:
-                    self.assertTrue(
-                        np.isnan(bar_data.spot_value(asset, field))
-                    )
+                    asset_value = bar_data.spot_value(asset, field)
 
-            for asset in self.ASSETS:
-                self.assertEqual(0, bar_data.spot_value(asset, "volume"))
+                    if field in OHLCP:
+                        self.assertTrue(np.isnan(asset_value))
+                    elif field == "volume":
+                        self.assertEqual(0, asset_value)
+                    elif field == "last_traded":
+                        self.assertTrue(asset_value is pd.NaT)
 
-            for asset in self.ASSETS:
-                self.assertTrue(
-                    bar_data.spot_value(asset, "last_traded") is pd.NaT
-                )
-
-            # single asset, multiple fields
-            for asset in self.ASSETS:
-                series = bar_data.spot_value(
-                    asset, OHLC + ["volume", "last_traded"]
-                )
-
-                for field in OHLC:
-                    self.assertTrue(np.isnan(series[field]))
-
-                self.assertEqual(0, series["volume"])
-                self.assertTrue(series["last_traded"] is pd.NaT)
-
-            # multiple assets, single field
-            for field in OHLC:
-                series = bar_data.spot_value(self.ASSETS, field)
-                for asset in self.ASSETS:
-                    self.assertTrue(np.isnan(series[asset]))
-
-            volume_series = bar_data.spot_value(self.ASSETS, "volume")
-            for asset in self.ASSETS:
-                self.assertEqual(0, volume_series[asset])
-
-            last_traded_series = bar_data.spot_value(
-                self.ASSETS, "last_traded"
-            )
-
-            for asset in self.ASSETS:
-                self.assertTrue(last_traded_series[asset] is pd.NaT)
-
-    def test_regular_minute_value_scalar(self):
+    def test_regular_minute_value(self):
         minutes = self.env.market_minutes_for_day(self.days[0])
-
-        field_info = {
-            "open": 1,
-            "high": 2,
-            "low": -1,
-            "close": 0
-        }
 
         for idx, minute in enumerate(minutes):
             # day2 has prices
@@ -165,40 +165,32 @@ class TestBarData(TestCase):
             # volume: 100-3900 (by 100)
 
             # asset2 is the same thing, but with only every 10th minute
-            # populated
+            # populated.
+
+            # this test covers the "IPO morning" case, because asset2 only
+            # has data starting on the 10th minute.
 
             bar_data = BarData(self.data_portal, lambda: minute, "minute")
+            self.check_internal_consistency(bar_data)
             asset2_has_data = (((idx + 1) % 10) == 0)
 
-            df = bar_data.spot_value([self.ASSET1, self.ASSET2], ALL_FIELDS)
+            self.assertTrue(bar_data.can_trade(self.ASSET1))
+            self.assertFalse(bar_data.is_stale(self.ASSET1))
 
-            asset1_multi_field = bar_data.spot_value(self.ASSET1, ALL_FIELDS)
-            asset2_multi_field = bar_data.spot_value(self.ASSET2, ALL_FIELDS)
+            if idx < 9:
+                self.assertFalse(bar_data.can_trade(self.ASSET2))
+                self.assertFalse(bar_data.is_stale(self.ASSET2))
+            else:
+                self.assertTrue(bar_data.can_trade(self.ASSET2))
+
+                if asset2_has_data:
+                    self.assertFalse(bar_data.is_stale(self.ASSET2))
+                else:
+                    self.assertTrue(bar_data.is_stale(self.ASSET2))
 
             for field in ALL_FIELDS:
                 asset1_value = bar_data.spot_value(self.ASSET1, field)
                 asset2_value = bar_data.spot_value(self.ASSET2, field)
-
-                multi_asset_series = bar_data.spot_value(
-                    [self.ASSET1, self.ASSET2], field
-                )
-
-                # make sure all the different query forms are internally
-                # consistent
-                self.assert_equal_or_both_nan(multi_asset_series[self.ASSET1],
-                                              asset1_value)
-                self.assert_equal_or_both_nan(multi_asset_series[self.ASSET2],
-                                              asset2_value)
-
-                self.assert_equal_or_both_nan(df.loc[self.ASSET1][field],
-                                              asset1_value)
-                self.assert_equal_or_both_nan(df.loc[self.ASSET2][field],
-                                              asset2_value)
-
-                self.assert_equal_or_both_nan(asset1_multi_field[field],
-                                              asset1_value)
-                self.assert_equal_or_both_nan(asset2_multi_field[field],
-                                              asset2_value)
 
                 # now check the actual values
                 if idx == 0 and field == "low":
@@ -248,6 +240,35 @@ class TestBarData(TestCase):
                             self.assertEqual(last_traded_minute - 1,
                                              asset2_value)
 
+    def test_minute_value_after_assets_stopped(self):
+        minutes = self.env.market_minutes_for_day(self.days[-1])
+
+        last_trading_minute = \
+            self.env.market_minutes_for_day(self.days[-2])[-1]
+
+        # this entire day is after both assets have stopped trading
+        for idx, minute in enumerate(minutes):
+            bar_data = BarData(self.data_portal, lambda: minute, "minute")
+
+            self.assertFalse(bar_data.can_trade(self.ASSET1))
+            self.assertFalse(bar_data.can_trade(self.ASSET2))
+
+            self.assertFalse(bar_data.is_stale(self.ASSET1))
+            self.assertFalse(bar_data.is_stale(self.ASSET2))
+
+            self.check_internal_consistency(bar_data)
+
+            for field in ALL_FIELDS:
+                for asset in self.ASSETS:
+                    asset_value = bar_data.spot_value(asset, field)
+
+                    if field in OHLCP:
+                        self.assertTrue(np.isnan(asset_value))
+                    elif field == "volume":
+                        self.assertEqual(0, asset_value)
+                    elif field == "last_traded":
+                        self.assertEqual(last_trading_minute, asset_value)
+
     def assert_equal_or_both_nan(self, val1, val2):
         try:
             self.assertEqual(val1, val2)
@@ -258,9 +279,3 @@ class TestBarData(TestCase):
                 self.assertTrue(np.isnan(val2))
             else:
                 raise
-
-    def test_is_stale_minute(self):
-        pass
-
-    def test_can_trade_minute(self):
-        pass

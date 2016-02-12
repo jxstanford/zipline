@@ -295,9 +295,7 @@ class DataPortal(object):
         if dt < asset.start_date or dt > asset.end_date:
             if field == "volume":
                 return 0
-            elif field == "last_traded":
-                return pd.NaT
-            else:
+            elif field != "last_traded":
                 return np.NaN
 
         if data_frequency == "daily":

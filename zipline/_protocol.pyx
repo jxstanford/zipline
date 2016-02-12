@@ -213,7 +213,9 @@ cdef class BarData:
             return False
 
         # is there a last price?
-        return not np.isnan(data_portal.get_spot_value(asset, dt, "price"))
+        return not np.isnan(
+            data_portal.get_spot_value(asset, "price", dt, "minute")
+        )
 
     def is_stale(self, assets):
         """
@@ -246,8 +248,19 @@ cdef class BarData:
         if asset.end_date < dt:
             return False
 
-        return data_portal.get_spot_value(asset, dt, "close") != 0
+        current_val = data_portal.get_spot_value(asset, "close", dt, "minute")
 
+        if not np.isnan(current_val):
+            # found a current value, so we know this asset is not stale.
+            return False
+        else:
+            # if we don't have a current val, we need to distinguish between
+            # if this asset has ever traded (stale = True) or has never traded
+            # (stale = False)
+            last_traded_dt = \
+                data_portal.get_spot_value(asset, "last_traded", dt, "minute")
+
+            return not (last_traded_dt is pd.NaT)
     def __iter__(self):
         raise ValueError("'BarData' object is not iterable")
 
