@@ -38,6 +38,10 @@ BASE_FIELDS = frozenset([
     "open", "high", "low", "close", "volume", "price", "last_traded"
 ])
 
+OHLCV_FIELDS = frozenset([
+    "open", "high", "low", "close", "volume"
+])
+
 HISTORY_FREQUENCIES = set(["1m", "1d"])
 
 
@@ -292,7 +296,7 @@ class DataPortal(object):
         # if isinstance(asset, int):
         #     asset = self._asset_finder.retrieve_asset(asset)
 
-        if dt < asset.start_date or dt > asset.end_date:
+        if dt < asset.start_date or dt >= asset.end_date:
             if field == "volume":
                 return 0
             elif field != "last_traded":
@@ -459,15 +463,39 @@ class DataPortal(object):
                                         "minute", spot_value=result)
 
     def _get_daily_data(self, asset, column, dt):
-        while True:
+        if column == "last_traded":
+            last_traded_dt = \
+                self._equity_daily_reader.get_last_traded_dt(asset, dt)
+
+            if pd.isnull(last_traded_dt):
+                return pd.NaT
+            else:
+                return last_traded_dt
+        elif column in OHLCV_FIELDS:
+            # don't forward fill
             try:
-                value = self._equity_daily_reader.spot_price(asset, dt, column)
-                if value != -1:
-                    return value
+                val = self._equity_daily_reader.spot_price(asset, dt, column)
+                if val == -1:
+                    if column == "volume":
+                        return 0
+                    else:
+                        return np.nan
                 else:
-                    dt -= tradingcalendar.trading_day
+                    return val
             except NoDataOnDate:
-                return 0
+                return np.nan
+        elif column == "price":
+            while True:
+                try:
+                    value = self._equity_daily_reader.spot_price(
+                        asset, dt, "close"
+                    )
+                    if value != -1:
+                        return value
+                    else:
+                        dt -= tradingcalendar.trading_day
+                except NoDataOnDate:
+                    return np.nan
 
     def _get_history_daily_window(self, assets, end_dt, bar_count,
                                   field_to_use):

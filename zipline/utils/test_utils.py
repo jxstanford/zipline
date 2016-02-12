@@ -708,6 +708,33 @@ def write_minute_data_for_asset(env, writer, start_dt, end_dt, sid,
     writer.write(sid, df)
 
 
+def create_daily_df_for_asset(env, start_day, end_day, interval=1):
+    days = env.days_in_range(start_day, end_day)
+    days_count = len(days)
+    days_arr = np.array(range(2, days_count + 2))
+
+    df = pd.DataFrame({
+        "open": days_arr + 1,
+        "high": days_arr + 2,
+        "low": days_arr - 1,
+        "close": days_arr,
+        "volume": days_arr * 100,
+        "day": [day.value for day in days]
+    })
+
+    if interval > 1:
+        # only keep every 'interval' rows
+        for idx, minute in enumerate(days_arr):
+            if (idx + 1) % interval != 0:
+                df["open"].iloc[idx] = 0
+                df["high"].iloc[idx] = 0
+                df["low"].iloc[idx] = 0
+                df["close"].iloc[idx] = 0
+                df["volume"].iloc[idx] = 0
+
+    return df
+
+
 def create_data_portal_from_trade_history(env, tempdir, sim_params,
                                           trades_by_sid):
     if sim_params.data_frequency == "daily":
