@@ -45,7 +45,7 @@ cdef class BarData:
         self.data_frequency = data_frequency
         self._views = {}
 
-    def _get_equity_price_view(self, asset):
+    cdef _get_equity_price_view(self, asset):
         """
         Returns a DataPortalSidView for the given asset.  Used to support the
         data[sid(N)] public API.  Not needed if DataPortal is used standalone.
@@ -71,7 +71,7 @@ cdef class BarData:
 
         return view
 
-    def _create_sid_view(self, asset):
+    cdef _create_sid_view(self, asset):
         return SidView(
             asset,
             self.data_portal,
@@ -205,7 +205,7 @@ cdef class BarData:
                 for asset in assets
             })
 
-    def _can_trade_for_asset(self, asset, dt, data_portal):
+    cdef _can_trade_for_asset(self, asset, dt, data_portal):
         if asset.start_date > dt:
             return False
 
@@ -243,7 +243,7 @@ cdef class BarData:
                 for asset in assets
             })
 
-    def _is_stale_for_asset(self, asset, dt, data_portal):
+    cdef _is_stale_for_asset(self, asset, dt, data_portal):
         if asset.start_date > dt:
             return False
 
@@ -265,6 +265,53 @@ cdef class BarData:
                                            self.data_frequency)
 
             return not (last_traded_dt is pd.NaT)
+
+    def history(self, assets, fields, bar_count, frequency):
+        """
+        Returns a window of data for the given assets and fields.
+
+        This data is adjusted for splits, dividends, and mergers as of the
+        current algorithm time.
+
+        The semantics of missing data are identical to the ones described in
+        the notes for `get_spot_value`.
+
+        Parameters
+        ----------
+        assets: Asset or iterable of Asset
+
+        fields: string or iterable of string.  Valid values are "open", "high",
+            "low", "close", "volume", "price", and "last_traded".
+
+        bar_count: integer number of bars of trade data
+
+        frequency: string. "1m" for minutely data or "1d" for daily date
+
+        Returns
+        -------
+        series or DataFrame or Panel, depending on the dimensionality of
+            the 'assets' and 'fields' parameters.
+        """
+        if isinstance(fields, str):
+            asset_list = list(assets)
+
+            df = self.data_portal.get_history_window(
+                asset_list,
+                self.simulation_dt_func(),
+                bar_count,
+                frequency,
+                fields
+            )
+
+            if isinstance(assets, Asset):
+                return df[assets]
+            else:
+                return df
+        else:
+            pass
+
+
+
     def __iter__(self):
         raise ValueError("'BarData' object is not iterable")
 
@@ -280,9 +327,8 @@ cdef class BarData:
             normalize_date(self.simulation_dt_func())
         )
 
-    property current_dt:
-        def __get__(self):
-            return self.simulation_dt_func()
+
+
 
 cdef class SidView:
     def __init__(self, asset, data_portal, simulation_dt_func, data_frequency):
