@@ -13,6 +13,7 @@ from datashape import dshape, var, Record
 from nose_parameterized import parameterized
 import numpy as np
 from numpy.testing.utils import assert_array_almost_equal
+from odo import odo
 import pandas as pd
 from pandas.util.testing import assert_frame_equal
 from toolz import keymap, valmap, concatv
@@ -811,11 +812,18 @@ class BlazeToPipelineTestCase(TestCase):
     @with_extra_sid
     def test_deltas(self, asset_info):
         expr = bz.Data(self.df, name='expr', dshape=self.dshape)
-        deltas = bz.Data(self.df, name='deltas', dshape=self.dshape)
-        deltas = bz.transform(
-            deltas,
-            value=deltas.value + 10,
-            timestamp=deltas.timestamp + timedelta(days=1),
+        deltas = bz.Data(self.df, dshape=self.dshape)
+        deltas = bz.Data(
+            odo(
+                bz.transform(
+                    deltas,
+                    value=deltas.value + 10,
+                    timestamp=deltas.timestamp + timedelta(days=1),
+                ),
+                pd.DataFrame,
+            ),
+            name='delta',
+            dshape=self.dshape,
         )
 
         expected_views = keymap(pd.Timestamp, {
@@ -967,11 +975,18 @@ class BlazeToPipelineTestCase(TestCase):
             'timestamp': repeated_dates,
         })
         expr = bz.Data(baseline, name='expr', dshape=self.dshape)
-        deltas = bz.Data(baseline, name='deltas', dshape=self.dshape)
-        deltas = bz.transform(
-            deltas,
-            value=deltas.value + 10,
-            timestamp=deltas.timestamp + timedelta(days=1),
+        deltas = bz.Data(baseline, dshape=self.dshape)
+        deltas = bz.Data(
+            odo(
+                bz.transform(
+                    deltas,
+                    value=deltas.value + 10,
+                    timestamp=deltas.timestamp + timedelta(days=1),
+                ),
+                pd.DataFrame,
+            ),
+            name='delta',
+            dshape=self.dshape,
         )
         expected_views = keymap(pd.Timestamp, {
             '2014-01-03': np.array([[10.0, 11.0, 12.0],
