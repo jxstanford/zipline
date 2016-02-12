@@ -678,6 +678,36 @@ def write_bcolz_minute_data(env, days, path, df_dict):
         writer.write(sid, df)
 
 
+def write_minute_data_for_asset(env, writer, start_dt, end_dt, sid,
+                                    interval=1):
+    asset_minutes = env.minutes_for_days_in_range(start_dt, end_dt)
+
+    minutes_count = len(asset_minutes)
+
+    minutes_arr = np.array(range(1, minutes_count + 1))
+
+    df = pd.DataFrame({
+        "open": minutes_arr + 1,
+        "high": minutes_arr + 2,
+        "low": minutes_arr - 1,
+        "close": minutes_arr,
+        "volume": 100 * minutes_arr,
+        "dt": asset_minutes
+    }).set_index("dt")
+
+    if interval > 1:
+        # only keep every 'interval' rows
+        for idx, minute in enumerate(minutes_arr):
+            if (idx + 1) % interval != 0:
+                df["open"].iloc[idx] = 0
+                df["high"].iloc[idx] = 0
+                df["low"].iloc[idx] = 0
+                df["close"].iloc[idx] = 0
+                df["volume"].iloc[idx] = 0
+
+    writer.write(sid, df)
+
+
 def create_data_portal_from_trade_history(env, tempdir, sim_params,
                                           trades_by_sid):
     if sim_params.data_frequency == "daily":

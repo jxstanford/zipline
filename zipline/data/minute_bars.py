@@ -580,7 +580,7 @@ class BcolzMinuteBarReader(object):
             dt = _minute_index[minute_pos]
             if dt < start_date:
                 return -1
-            if minute_pos == 0 or volumes[minute_pos] != 0:
+            if volumes[minute_pos] != 0:
                 return minute_pos
             minute_pos -= 1
 

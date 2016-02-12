@@ -22,7 +22,7 @@ from zipline.finance.trading import (
     SimulationParameters
 )
 from zipline.utils.test_utils import str_to_seconds, MockDailyBarReader, \
-    DailyBarWriterFromDataFrames
+    DailyBarWriterFromDataFrames, write_minute_data_for_asset
 
 
 class HistoryTestCaseBase(TestCase):
@@ -180,38 +180,38 @@ class HistoryTestCaseBase(TestCase):
 
         return SQLiteAdjustmentReader(path)
 
-    @classmethod
-    def write_minute_data_for_asset(cls, writer, start_dt, end_dt, sid,
-                                    interval=1):
-        asset_minutes = cls.env.minutes_for_days_in_range(start_dt, end_dt)
-
-        minutes_count = len(asset_minutes)
-
-        if interval == 1:
-            minutes_arr = np.array(range(1, minutes_count + 1))
-        else:
-            # write every `interval` slots
-            # ie, instead of [1, 2, 3, 4, 5], would be [0, 0, 1, 0, 0, 2, ..]
-            # with interval 3
-            minutes_arr = np.zeros(minutes_count)
-
-            insert_position = interval
-            counter = 1
-            while insert_position < minutes_count:
-                minutes_arr[insert_position] = counter
-                counter += 1
-                insert_position += interval
-
-        df = pd.DataFrame({
-            "open": minutes_arr + 1,
-            "high": minutes_arr + 2,
-            "low": minutes_arr - 1,
-            "close": minutes_arr,
-            "volume": 100 * minutes_arr,
-            "dt": asset_minutes
-        }).set_index("dt")
-
-        writer.write(sid, df)
+    # @classmethod
+    # def write_minute_data_for_asset(cls, writer, start_dt, end_dt, sid,
+    #                                 interval=1):
+    #     asset_minutes = cls.env.minutes_for_days_in_range(start_dt, end_dt)
+    #
+    #     minutes_count = len(asset_minutes)
+    #
+    #     if interval == 1:
+    #         minutes_arr = np.array(range(1, minutes_count + 1))
+    #     else:
+    #         # write every `interval` slots
+    #         # ie, instead of [1, 2, 3, 4, 5], would be [0, 0, 1, 0, 0, 2, ..]
+    #         # with interval 3
+    #         minutes_arr = np.zeros(minutes_count)
+    #
+    #         insert_position = interval
+    #         counter = 1
+    #         while insert_position < minutes_count:
+    #             minutes_arr[insert_position] = counter
+    #             counter += 1
+    #             insert_position += interval
+    #
+    #     df = pd.DataFrame({
+    #         "open": minutes_arr + 1,
+    #         "high": minutes_arr + 2,
+    #         "low": minutes_arr - 1,
+    #         "close": minutes_arr,
+    #         "volume": 100 * minutes_arr,
+    #         "dt": asset_minutes
+    #     }).set_index("dt")
+    #
+    #     writer.write(sid, df)
 
 
 class MinuteEquityHistoryTestCase(HistoryTestCaseBase):
@@ -263,7 +263,8 @@ class MinuteEquityHistoryTestCase(HistoryTestCaseBase):
             US_EQUITIES_MINUTES_PER_DAY
         )
 
-        cls.write_minute_data_for_asset(
+        write_minute_data_for_asset(
+            cls.env,
             writer,
             pd.Timestamp("2014-01-03", tz='UTC'),
             pd.Timestamp("2016-01-30", tz='UTC'),
@@ -271,14 +272,16 @@ class MinuteEquityHistoryTestCase(HistoryTestCaseBase):
         )
 
         for sid in [2, 4, 5, 6]:
-            cls.write_minute_data_for_asset(
+            write_minute_data_for_asset(
+                cls.env,
                 writer,
                 pd.Timestamp("2015-01-05", tz='UTC'),
                 pd.Timestamp("2015-12-31", tz='UTC'),
                 sid
             )
 
-        cls.write_minute_data_for_asset(
+        write_minute_data_for_asset(
+            cls.env,
             writer,
             pd.Timestamp("2015-01-05", tz='UTC'),
             pd.Timestamp("2015-12-31", tz='UTC'),
@@ -982,7 +985,7 @@ class DailyEquityHistoryTestCase(HistoryTestCaseBase):
                 # 10 more leading NaNs because we had 0 as the first 9 prices
                 self.assertTrue(np.isnan(window2[i]))
             else:
-                self.assertEqual(window2[i], (i - 29) // 10)
+                    self.assertEqual(window2[i], (i - 29) // 10)
 
         # ffill on price, but craft window in a way that the beginning of
         # the window has no data, but there is data before that (outside the
